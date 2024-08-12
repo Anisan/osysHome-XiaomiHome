@@ -1,0 +1,176 @@
+{% extends "layouts/module_admin.html" %}
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="XiaomiHome">XiaomiHome</a></li>
+{% endblock %}
+{% block module %}
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+<div id="edit_device">
+    <form @submit.prevent="updateDevice">
+        <div class="input-group my-3">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Name</span>
+            <input type="text" class="form-control" id="name" v-model="device.title">
+        </div>
+        <div v-if="device.type=='gateway'" class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Key</span>
+            <input type="text" class="form-control" id="name" v-model="device.gate_key">
+        </div>
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Type</span>
+            <span class="input-group-text" id="inputGroup-sizing-sm">
+                <img :src="'/XiaomiHome/static/devices/'+ device.type +'.png'" height="30px" :alt="device.type" onError="this.src='/XiaomiHome/static/XiaomiHome.png'"/>
+            </span>
+            <input type="text" class="form-control" readonly id="name" v-model="device.type">
+        </div>
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-sm">SID</span>
+            <input type="text" class="form-control" readonly id="name" v-model="device.sid">
+        </div>
+        <div class="input-group mb-3">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Gate IP:</span>
+            <input type="text" class="form-control" readonly id="name" v-model="device.gate_ip">
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title">Parameters</h5>
+            </div>
+            <div class="card-body">
+        <div class="table-responsive" v-if="device.commands.length > 0">
+            <table class="table table-hover table-striped">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Value</th>
+                        <th>Linked object</th>
+                        <th>Linked property</th>
+                        <th>Linked method</th>
+                        <th>Updated</th>
+                        <th>&nbsp;</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(item,index) in device.commands" :key="'cmnd_'+index">
+                        <td><b>[[ item.title ]]</b></td>
+                        <td>[[ item.value ]]</td>
+                        <td>
+                            <select-with-filter placeholder="Select object" :options="objectOptions" v-model="item.linked_object" @changed="item.linked_property = null" style="min-width: 300px;max-width: 300px;"></select-with-filter>
+                        </td>
+                        <td>
+                            <select-with-filter placeholder="Select property" v-if="item.linked_object && item.linked_object in objects" :options="objects[item.linked_object].properties" v-model="item.linked_property"  style="min-width: 300px;max-width: 300px;"></select-with-filter>
+                        </td>
+                        <td>
+                            <select-with-filter placeholder="Select method" v-if="item.linked_object && item.linked_object in objects" :options="objects[item.linked_object].methods" v-model="item.linked_method"  style="min-width: 300px;max-width: 300px;"></select-with-filter>
+                        </td>
+                        <td>[[ item.updated ]]</td>
+                        <td>
+                            <a class="btn btn-danger ms-2 ms-auto" @click="delCommand(item.id)"><i class="fas fa-trash"></i></a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div v-else >Empty</div>
+    </div>
+        </div>
+        <div class="my-2 mt-3">
+            <button class="btn btn-success" type="submit">
+                <span v-if="isSaving" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                Save
+            </button>
+            <a href="XiaomiHome" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+    <p>[[ message ]]</p>
+</div>
+<script src="{{ config.ASSETS_ROOT }}/js/components/select-with-filter.js"></script>
+<script>
+    new Vue({
+        el: '#edit_device',
+        delimiters: ['[[', ']]'], // Измененные разделители
+        data: {
+            isSaving: false,
+            device: {
+                id: '', // Идентификатор 
+                title: '',
+                type: null,
+                commands:[],
+            },
+            message: '',
+            objects:[],
+            isOpen:false,
+            
+        },
+        async created() {
+            await this.fetchObjects()
+            const deviceId = '{{id}}';
+           //this.message = deviceId
+            if (deviceId != 'None')
+                this.fetchDevice(deviceId);
+        },
+        computed:{
+            objectOptions(){
+                list = {}
+                Object.keys(this.objects).forEach(key => {
+                    list[key] = this.objects[key].description
+                });
+                return list
+            }
+        },
+        methods: {
+            fetchObjects(){
+                axios.get(`/api/object/list/details`)
+                    .then(response => {
+                        this.objects = response.data.result
+                    })
+                    .catch(error => {
+                        console.log(error)
+                        this.message = 'Error fetching: ' + error;
+                    });
+            },
+            fetchDevice(deviceId) {
+                axios.get(`/XiaomiHome/device/${deviceId}`)
+                    .then(response => {
+                        var device = response.data;
+                        this.device = device;
+                    })
+                    .catch(error => {
+                        console.log(error)
+                        this.message = 'Error fetching device: ' + error;
+                    });
+            },
+            updateDevice() {
+                this.isSaving = true
+                this.message = 'Saving...'
+                // Обновление данных пользователя на сервере
+                axios.post(`/XiaomiHome/device/${this.device.id}`, this.device)
+                    .then(response => {
+                        this.message = 'Device updated successfully!';
+                        this.isSaving = false
+                        window.location.href = 'XiaomiHome';
+                    })
+                    .catch(error => {
+                        this.message = 'Error updating device: ' + error;
+                        this.isSaving = false
+                    });
+            },
+
+            delCommand(id) {
+                // Удаляем запись из словаря
+                this.$delete(this.device.command, key);
+                //todo delete from DB
+                axios.get(`/XiaomiHome/delete_cmnd/${id}`)
+                    .then(response => {
+                        console.log(response.data)
+                    })
+                    .catch(error => {
+                        console.log(error)
+                        this.message = 'Error fetching device: ' + error;
+                    });
+            },
+        }
+    });
+</script>
+    
+{% endblock %}

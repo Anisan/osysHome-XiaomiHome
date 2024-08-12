@@ -1,0 +1,62 @@
+{% extends "layouts/module_admin.html" %}
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="XiaomiHome">XiaomiHome</a></li>
+{% endblock %}
+{% block module %}
+
+<div class="table-responsive">
+    <table class="table table-hover table-striped">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>SID</th>
+                <th>IP</th>
+                <th>Updated</th>
+                <th>&nbsp;</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for device in devices %}
+            <tr>
+                <td>
+                    <img src="/XiaomiHome/static/devices/{{device.type}}.png" height="40px" onerror="this.src='/XiaomiHome/static/XiaomiHome.png'">
+                </td>
+                <td>
+                    <b>{{device.title}}</b>
+                    {% if device.power != "" %}
+                        <span class="badge bg-{{device.power_warning}}"><i class="glyphicon glyphicon-flash"></i> {{device.power}}%</span>
+                    {%endif%}
+                </td>
+                <td>{{device.type}}</td>
+                <td>
+                  {% if device.sid !="" %}
+                   {{device.sid}}
+                  {%else%}
+                   &nbsp;
+                  {%endif%}
+                </td>
+                <td>
+                    {{device.gate_ip}}
+                </td>
+                 <td>
+                  {% if device.updated!=""%}
+                   {{device.updated}}
+                  {%else%}
+                   &nbsp;
+                  {%endif%}
+                 </td>
+                 <td width="1%" nowrap>
+                  <div>
+                    <a href="?op=edit&device={{device.id}}" class="btn btn-secondary" title="Edit"><i class="feather icon-edit"></i></a>
+                    <a href="?op=delete&device={{device.id}}" onClick="return confirm('Are you sure? Please confirm.')" class="btn btn-danger" title="Delete"><i class="feather icon-trash"></i></a>
+                </div>
+                 </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
