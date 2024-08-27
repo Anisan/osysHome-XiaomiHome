@@ -112,7 +112,7 @@ class XiaomiHome(BasePlugin):
             
     def search(self, query: str) -> list:
         res = []
-        cmnds = Command.query.filter(or_(Command.linked_object.name.contains(query),Command.linked_property.contains(query),Command.linked_method.contains(query))).all()
+        cmnds = Command.query.filter(or_(Command.linked_object.contains(query),Command.linked_property.contains(query),Command.linked_method.contains(query))).all()
         for cmd in cmnds:
             res.append({"url":f'XiaomiHome?op=edit&device={cmd.device_id}', "title":f'{cmd.title}', "tags":[{"name":"XiaomiHome","color":"success"}]})
         return res
