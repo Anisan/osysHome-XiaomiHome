@@ -14,7 +14,7 @@ from sqlalchemy import delete, or_
 from app.database import db, session_scope, row2dict, getSession
 from app.core.main.BasePlugin import BasePlugin
 from app.core.models.Tasks import Task
-from plugins.XiaomiHome.models.Device import Device
+from plugins.XiaomiHome.models.Device import XiDevice
 from plugins.XiaomiHome.models.Command import Command
 from app.authentication.handlers import handle_admin_required
 from app.core.lib.object import setProperty, callMethod, setLinkToObject, removeLinkFromObject
@@ -35,9 +35,6 @@ class XiaomiHome(BasePlugin):
         self.sock = None
         
         self.latest_data_received = time.time()
-        
-        import logging
-        self.logger.setLevel(logging.DEBUG)
 
     def initialization(self):
         self.xiaomi_socket_connect()
@@ -53,12 +50,12 @@ class XiaomiHome(BasePlugin):
                 from sqlalchemy import delete
                 sql = delete(Command).where(Command.device_id == int(id))
                 session.execute(sql)
-                sql = delete(Device).where(Device.id == int(id))
+                sql = delete(XiDevice).where(XiDevice.id == int(id))
                 session.execute(sql)
                 session.commit()
                 return redirect(self.name)
 
-        devices = Device.query.all()
+        devices = XiDevice.query.all()
         return render_template("xiaomi_home.html", devices=devices)
 
     def route_index(self):
@@ -69,7 +66,7 @@ class XiaomiHome(BasePlugin):
         def point_xi_device(device_id=None):
             with session_scope() as session:
                 if request.method == "GET":
-                    dev = Device.get_by_id(device_id)
+                    dev = XiDevice.get_by_id(device_id)
                     device = row2dict(dev)
                     device['commands'] = []
                     cmnds = Command.query.filter(Command.device_id == device_id).all()
@@ -79,9 +76,9 @@ class XiaomiHome(BasePlugin):
                 if request.method == "POST":
                     data = request.get_json()
                     if data['id']:
-                        device = session.query(Device).where(Device.id == int(data['id'])).one()
+                        device = session.query(XiDevice).where(XiDevice.id == int(data['id'])).one()
                     else:
-                        device = Device()
+                        device = XiDevice()
                         session.add(device)
                         session.commit()
 
@@ -89,7 +86,7 @@ class XiaomiHome(BasePlugin):
                     device.gate_key = data['gate_key']
 
                     for cmd in data['commands']:
-                        cmnd_rec = session.query(Command).filter(Command.title == cmd['title']).one()
+                        cmnd_rec = session.query(Command).filter(Command.device_id == device.id, Command.title == cmd['title']).one()
                         if cmnd_rec.linked_object:
                             removeLinkFromObject(cmnd_rec.linked_object, cmnd_rec.linked_property, self.name)
                         cmnd_rec.linked_object = cmd['linked_object']
@@ -190,10 +187,10 @@ class XiaomiHome(BasePlugin):
                 message_data['data'] = json.loads(data_text)
             
             if 'sid' in message_data:
-                device = session.query(Device).filter(Device.sid == message_data['sid']).one_or_none()
+                device = session.query(XiDevice).filter(XiDevice.sid == message_data['sid']).one_or_none()
                 
                 if not device:
-                    device = Device()
+                    device = XiDevice()
                     device.sid = message_data['sid']
                     device.type = message_data['model']
                     device.title = f"{message_data['model'].capitalize()} {datetime.datetime.now().strftime('%Y-%m-%d')}"
@@ -348,15 +345,15 @@ class XiaomiHome(BasePlugin):
         with session_scope() as session:
             properties = session.query(Command).filter(Command.linked_object == obj, Command.linked_property == prop_name).all()
             for prop in properties:
-                device = session.query(Device).filter(Device.id == prop.device_id).one()
+                device = session.query(XiDevice).filter(XiDevice.id == prop.device_id).one()
                 ip = device.gate_ip
                 gate = device
                 key = None
                 if device.type != 'gateway':
-                    gate = session.query(Device).filter(Device.type == 'gateway', Device.gate_ip == ip).one()
+                    gate = session.query(XiDevice).filter(XiDevice.type == 'gateway', XiDevice.gate_ip == ip).one()
                     if gate:
-                        key = gate['GATE_KEY']
-                        token = gate['TOKEN']
+                        key = gate.gate_key
+                        token = gate.token
                     else:
                         self.logger.error('Cannot find gateway key')
                         continue
@@ -430,7 +427,6 @@ class XiaomiHome(BasePlugin):
                         if vol is not None:
                             cmd_data['vol'] = vol
 
-                print(token, key, data)
                 if 'cmd' in data:
                     if data['cmd'] == 'write':
                         if gate.type == 'gateway':
@@ -440,6 +436,5 @@ class XiaomiHome(BasePlugin):
                             data['key'] = self.make_signature(token, key)
                             data['params'] = cmd_data
                         
-                    print(token, key, data)
                     self.send_message(data,ip)
                 

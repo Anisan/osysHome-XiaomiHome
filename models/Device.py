@@ -1,6 +1,6 @@
 from app.database import Column, Model, SurrogatePK, db
 
-class Device(SurrogatePK, db.Model):
+class XiDevice(SurrogatePK, db.Model):
     __tablename__ = 'xidevices'
     title = Column(db.String(100))
     type = Column(db.String(100))
