@@ -11,7 +11,7 @@ import socket
 import struct
 from flask import redirect, render_template, jsonify, request
 from sqlalchemy import delete, or_
-from app.database import db, session_scope, row2dict, getSession
+from app.database import db, session_scope, row2dict, get_now_to_utc
 from app.core.main.BasePlugin import BasePlugin
 from app.core.models.Tasks import Task
 from plugins.XiaomiHome.models.Device import XiDevice
@@ -193,7 +193,7 @@ class XiaomiHome(BasePlugin):
                     device = XiDevice()
                     device.sid = message_data['sid']
                     device.type = message_data['model']
-                    device.title = f"{message_data['model'].capitalize()} {datetime.datetime.now().strftime('%Y-%m-%d')}"
+                    device.title = f"{message_data['model'].capitalize()} {get_now_to_utc().strftime('%Y-%m-%d')}"
                     session.add(device)
                     session.commit()
                     device_id = device.id
@@ -218,10 +218,10 @@ class XiaomiHome(BasePlugin):
                 if 'token' in message_data and message_data['token']:
                     device.token = message_data['token']
                     device.gate_ip = ip
-                    device.updated = datetime.datetime.now()
+                    device.updated = get_now_to_utc()
                 else:
                     device.gate_ip = ip
-                    device.updated = datetime.datetime.now()
+                    device.updated = get_now_to_utc()
                 
                 session.commit()
 
@@ -310,7 +310,7 @@ class XiaomiHome(BasePlugin):
                             
                         old_value = cmd_rec.value if cmd_rec else None
                         cmd_rec.value = str(value)
-                        cmd_rec.updated = datetime.datetime.now()
+                        cmd_rec.updated = get_now_to_utc()
 
                         if cmd_rec.linked_object and cmd_rec.linked_property:
                             setProperty(cmd_rec.linked_object + "." + cmd_rec.linked_property,value,self.name)
