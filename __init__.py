@@ -114,6 +114,23 @@ class XiaomiHome(BasePlugin):
             res.append({"url":f'XiaomiHome?op=edit&device={cmd.device_id}', "title":f'{cmd.title}', "tags":[{"name":"XiaomiHome","color":"success"}]})
         return res
 
+    def changeObject(self, event, object_name, property_name, method_name, new_value):
+        with session_scope() as session:
+            cmnds = session.query(Command).filter(Command.linked_object == object_name).all()
+            for cmnd in cmnds:
+                if new_value is None:
+                    cmnd.linked_object = None
+                    cmnd.linked_property = None
+                    cmnd.linked_method = None
+                elif property_name is None and method_name is None:
+                    cmnd.linked_object = new_value
+                elif property_name:
+                    cmnd.linked_property = new_value
+                elif method_name:
+                    cmnd.linked_method = new_value
+
+            session.commit()
+
     def cyclic_task(self):
 
         if self.sock:
