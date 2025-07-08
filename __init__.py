@@ -1,19 +1,16 @@
-""" 
+"""
 # Xiaomi home zigbee gateway
 
 
 """
 import time
 import json
-import threading
-import datetime
 import socket
 import struct
 from flask import redirect, render_template, jsonify, request
 from sqlalchemy import delete, or_
-from app.database import db, session_scope, row2dict, get_now_to_utc
+from app.database import session_scope, row2dict, get_now_to_utc
 from app.core.main.BasePlugin import BasePlugin
-from app.core.models.Tasks import Task
 from plugins.XiaomiHome.models.Device import XiDevice
 from plugins.XiaomiHome.models.Command import Command
 from app.authentication.handlers import handle_admin_required
@@ -33,7 +30,7 @@ class XiaomiHome(BasePlugin):
         self.category = "Devices"
         self.version = "0.1"
         self.sock = None
-        
+
         self.latest_data_received = time.time()
 
     def initialization(self):
@@ -44,7 +41,7 @@ class XiaomiHome(BasePlugin):
         op = request.args.get("op", None)
         if op == 'edit':
             return render_template("xiaomi_device.html", id=id)
-        
+
         if op == 'delete':
             with session_scope() as session:
                 from sqlalchemy import delete
@@ -96,9 +93,9 @@ class XiaomiHome(BasePlugin):
                             setLinkToObject(cmnd_rec.linked_object, cmnd_rec.linked_property, self.name)
 
                     session.commit()
-                    
+
                     return 'Device updated successfully', 200
-        
+
         @self.blueprint.route('/XiaomiHome/delete_cmnd/<cmd_id>', methods=['GET', 'POST'])
         @handle_admin_required
         def point_xi_delcmd(cmd_id=None):
@@ -106,7 +103,7 @@ class XiaomiHome(BasePlugin):
                 sql = delete(Command).where(Command.id == int(cmd_id))
                 session.execute(sql)
                 session.commit()
-            
+
     def search(self, query: str) -> list:
         res = []
         cmnds = Command.query.filter(or_(Command.linked_object.contains(query),Command.linked_property.contains(query),Command.linked_method.contains(query))).all()
@@ -139,11 +136,11 @@ class XiaomiHome(BasePlugin):
                 buf = buf.decode('utf-8')
             except socket.timeout:
                 buf = ''
-            
+
             if buf:
                 self.processMessage(buf, remote_ip)
                 self.latest_data_received = time.time()
-            
+
             if time.time() - self.latest_data_received > 60:
                 self.logger.error("Xiaomi data timeout...")
                 self.sock.close()
@@ -152,10 +149,10 @@ class XiaomiHome(BasePlugin):
             self.event.wait(15.0)
             if not self.event.is_set():
                 self.xiaomi_socket_connect()
-    
+
     def xiaomi_socket_connect(self):
         bind_ip = '0.0.0.0'  # Подставь необходимый IP-адрес
-        
+
         # Создание UDP сокета
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -197,15 +194,15 @@ class XiaomiHome(BasePlugin):
     def processMessage(self, message, ip):
         with session_scope() as session:
             self.logger.debug("Recv from %s: %s", ip, message)
-            
+
             message_data = json.loads(message)
             if 'data' in message_data:
                 data_text = message_data['data'].replace('\\"', '"')
                 message_data['data'] = json.loads(data_text)
-            
+
             if 'sid' in message_data:
                 device = session.query(XiDevice).filter(XiDevice.sid == message_data['sid']).one_or_none()
-                
+
                 if not device:
                     device = XiDevice()
                     device.sid = message_data['sid']
@@ -220,7 +217,7 @@ class XiaomiHome(BasePlugin):
                         commands.append('ringtone')
                     if device.type == 'curtain':
                         commands.append('curtain_status')
-                    
+
                     for command in commands:
                         cmd_rec = session.query(Command).filter(Command.device_id == device_id, Command.title == command).one_or_none()
                         if not cmd_rec:
@@ -231,7 +228,7 @@ class XiaomiHome(BasePlugin):
                             session.commit()
                 else:
                     device_id = device.id
-                
+
                 if 'token' in message_data and message_data['token']:
                     device.token = message_data['token']
                     device.gate_ip = ip
@@ -239,26 +236,26 @@ class XiaomiHome(BasePlugin):
                 else:
                     device.gate_ip = ip
                     device.updated = get_now_to_utc()
-                
+
                 session.commit()
 
                 if 'cmd' in message_data and message_data['cmd']:
                     command = message_data['cmd']
                     got_commands = []
                     data = message_data.get('data', {})
-                    
+
                     if 'ip' in data:
                         got_commands.append({'command': 'ip', 'value': data['ip']})
-                    
+
                     if command in ['write_ack', 'read_ack', 'report']:
                         got_commands.append({'command': command, 'value': json.dumps(message_data)})
-                    
+
                     if command == 'report' and message_data['model'] == 'gateway':
                         if 'rgb' in data:
                             value_str = f"{data['rgb']:08x}"
                             got_commands.append({'command': 'rgb', 'value': value_str[-6:]})
                             got_commands.append({'command': 'brightness', 'value': int(value_str[:2], 16)})
-                    
+
                     if 'lux' in data:
                         got_commands.append({'command': 'lux', 'value': data['lux']})
                     if 'illumination' in data:
@@ -324,7 +321,7 @@ class XiaomiHome(BasePlugin):
                         if not cmd_rec:
                             cmd_rec = Command(device_id=device_id, title=command)
                             session.add(cmd_rec)
-                            
+
                         old_value = cmd_rec.value if cmd_rec else None
                         cmd_rec.value = str(value)
                         cmd_rec.updated = get_now_to_utc()
@@ -333,23 +330,11 @@ class XiaomiHome(BasePlugin):
                             setProperty(cmd_rec.linked_object + "." + cmd_rec.linked_property,value,self.name)
 
                         if cmd_rec.linked_object and cmd_rec.linked_method:
-                            if str(value) != old_value or \
-                                command == 'motion' or \
-                                command == 'click0' or \
-                                command == 'click1' or \
-                                command == 'both_click' or \
-                                command == 'alarm' or \
-                                command == 'iam' or \
-                                command == 'leak' or \
-                                device.type == 'sensor_switch.aq3' or \
-                                device.type == 'sensor_switch.aq2' or \
-                                device.type == 'switch' or \
-                                device.type == 'cube':
-                            
-                                callMethod(cmd_rec.linked_object + "." + cmd_rec.linked_property, message_data, self.name)
+                            if str(value) != old_value or command in ['motion', 'click0', 'click1', 'both_click', 'alarm', 'iam', 'leak'] or device.type in ['sensor_switch.aq3','sensor_switch.aq2','switch','cube']:
+                                callMethod(f'{cmd_rec.linked_object}.{cmd_rec.linked_method}', message_data, self.name)
 
                     session.commit()
-                
+
     def make_signature(self, token, key):
         from Crypto.Cipher import AES
         init_vector = bytes(bytearray.fromhex('17996d093d28ddb3ba695a2e6f58562e'))
@@ -377,7 +362,7 @@ class XiaomiHome(BasePlugin):
                 else:
                     token = device.token
                     key = device.gate_key
-                    
+
                 data = {'sid': device.sid, 'short_id': 0}
                 cmd_data = {}
 
@@ -452,6 +437,5 @@ class XiaomiHome(BasePlugin):
                         elif gate.type == 'acpartner.v3':
                             data['key'] = self.make_signature(token, key)
                             data['params'] = cmd_data
-                        
+
                     self.send_message(data,ip)
-                
