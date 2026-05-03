@@ -14,7 +14,7 @@ from app.core.main.BasePlugin import BasePlugin
 from plugins.XiaomiHome.models.Device import XiDevice
 from plugins.XiaomiHome.models.Command import Command
 from app.authentication.handlers import handle_admin_required
-from app.core.lib.object import setProperty, callMethod, setLinkToObject, removeLinkFromObject
+from app.core.lib.object import updateProperty, callMethod, setLinkToObject, removeLinkFromObject
 
 XIAOMI_MULTICAST_ADDRESS = '224.0.0.50'
 XIAOMI_MULTICAST_PORT = 9898
@@ -191,6 +191,30 @@ class XiaomiHome(BasePlugin):
         self.logger.debug("Sending message (%s) to %s", message, ip)
         self.sock.sendto(json.dumps(message).encode(), (ip, XIAOMI_MULTICAST_PORT))
 
+    def _get_gateway_for_ip(self, session, ip):
+        gateways = session.query(XiDevice).filter(XiDevice.type == 'gateway', XiDevice.gate_ip == ip).order_by(XiDevice.updated.desc()).all()
+        if not gateways:
+            return None
+        if len(gateways) > 1:
+            self.logger.warning(
+                "Multiple gateways (%s) found for IP %s, using newest sid=%s",
+                len(gateways),
+                ip,
+                gateways[0].sid
+            )
+        return gateways[0]
+
+    def _resolve_gateway_for_device(self, session, device):
+        if device.type == 'gateway':
+            return device
+
+        if device.parent_id:
+            parent = session.query(XiDevice).filter(XiDevice.id == device.parent_id, XiDevice.type == 'gateway').one_or_none()
+            if parent:
+                return parent
+
+        return self._get_gateway_for_ip(session, device.gate_ip)
+
     def processMessage(self, message, ip):
         with session_scope() as session:
             self.logger.debug("Recv from %s: %s", ip, message)
@@ -236,6 +260,11 @@ class XiaomiHome(BasePlugin):
                 else:
                     device.gate_ip = ip
                     device.updated = get_now_to_utc()
+
+                if device.type != 'gateway':
+                    parent_gateway = self._get_gateway_for_ip(session, ip)
+                    if parent_gateway:
+                        device.parent_id = parent_gateway.id
 
                 session.commit()
 
@@ -327,7 +356,7 @@ class XiaomiHome(BasePlugin):
                         cmd_rec.updated = get_now_to_utc()
 
                         if cmd_rec.linked_object and cmd_rec.linked_property:
-                            setProperty(cmd_rec.linked_object + "." + cmd_rec.linked_property,value,self.name)
+                            updateProperty(cmd_rec.linked_object + "." + cmd_rec.linked_property,value,self.name)
 
                         if cmd_rec.linked_object and cmd_rec.linked_method:
                             if str(value) != old_value or command in ['motion', 'click0', 'click1', 'both_click', 'alarm', 'iam', 'leak'] or device.type in ['sensor_switch.aq3','sensor_switch.aq2','switch','cube']:
@@ -348,20 +377,14 @@ class XiaomiHome(BasePlugin):
             properties = session.query(Command).filter(Command.linked_object == obj, Command.linked_property == prop_name).all()
             for prop in properties:
                 device = session.query(XiDevice).filter(XiDevice.id == prop.device_id).one()
-                ip = device.gate_ip
-                gate = device
-                key = None
-                if device.type != 'gateway':
-                    gate = session.query(XiDevice).filter(XiDevice.type == 'gateway', XiDevice.gate_ip == ip).one()
-                    if gate:
-                        key = gate.gate_key
-                        token = gate.token
-                    else:
-                        self.logger.error('Cannot find gateway key')
-                        continue
-                else:
-                    token = device.token
-                    key = device.gate_key
+                gate = self._resolve_gateway_for_device(session, device)
+                if not gate:
+                    self.logger.error("Cannot find gateway for device sid=%s, ip=%s", device.sid, device.gate_ip)
+                    continue
+
+                ip = gate.gate_ip
+                token = gate.token
+                key = gate.gate_key
 
                 data = {'sid': device.sid, 'short_id': 0}
                 cmd_data = {}
